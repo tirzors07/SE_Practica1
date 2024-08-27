@@ -5,10 +5,10 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include <stdio.h>
-/* Tiempo de cada led prendido y apagado tambien entre cambio de estados */
+/
 #define DELAY_LEDS 500 
 #define DELAY_COINS 500
-/* El tiempo maximo permitido de inactividad para el cliente, 2 segundos */
+
 #define US_INACITIVITY 200000
 static uint16_t saldo = 0;
 static int64_t last_time = 0;
