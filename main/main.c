@@ -5,7 +5,6 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include <stdio.h>
-
 /* Tiempo de cada led prendido y apagado tambien entre cambio de estados */
 #define DELAY_LEDS 500 
 #define DELAY_COINS 500
@@ -13,9 +12,11 @@
 #define US_INACITIVITY 200000
 static uint16_t saldo = 0;
 static int64_t last_time = 0;
+static int64_t current_time;
 static int64_t time_inactivity = 0;
-static uint8_t flag_ticket = 1;
+static uint8_t flag_ticket = 0;
 QueueHandle_t handlerQueue;
+static uint8_t flag_finishInsert = 0;
 
 uint8_t array_init[4][2] = { //matriz para numero de botones y leds
    // btn   leds
@@ -31,7 +32,13 @@ typedef enum
     DIEZ_PESOS = 22,
     VEINTE_PESOS = 23,
 } State_t;
-
+typedef enum
+{
+    STATE_INIT = 0,
+    STATE_INSERTCOIN,
+    STATE_RETURNCOIN,
+    STATE_TICKET,
+} State_m;
 void gpios_init();
 int insertarMonedas();//retorna la cantidad total de numberCoinss insertadas
 void secuenciaCambio(uint8_t cambio, uint8_t piNumber);//funcion para representar cambio en leds
@@ -53,18 +60,25 @@ void app_main(void)
     xQueueSendFromISR(handlerQueue, &pinNumber, NULL);
   }
 }*/
-/*void LED_Control_Task(void *params)
+void LED_Control_Task(void *params)
 {
-    int pinNumber, saldo = 0;
+    State_m current_state;
     while (1)
     {
-        if (xQueueReceive(handlerQueue, &pinNumber, portMAX_DELAY))
-        {
-            printf("GPIO %d was pressed %d times. The state is %d\n", pinNumber, saldo++, gpio_get_level(INPUT_PIN));
-            gpio_set_level(LED_PIN, gpio_get_level(INPUT_PIN));
+        insertarMonedas();
+        if(saldo >= 15 && flag_finishInsert){
+            cambio(saldo,0,0,0);//func para retornar cambio
+            flag_ticket = 1;
+        }else{
+            flag_ticket = 0;
+        }
+        if(flag_ticket){
+            gpio_set_level(array_init[3][1], 1);//encender gpio 23 o el configurado para confirmar ticket
+            vTaskDelay( 500/portTICK_PERIOD_MS);
+            gpio_set_level(array_init[3][1], 0);
         }
     }
-}*/
+}
 void cambio(uint8_t cantidad, uint8_t diez, uint8_t cinco, uint8_t un_peso)
 {
     if(cantidad == 0){
@@ -96,7 +110,6 @@ void secuenciaCambio(uint8_t numberCoins, uint8_t piNumber)
 int insertarMonedas()
 {
     int pinNumber;
-    while (1){
         if (xQueueReceive(handlerQueue, &pinNumber, portMAX_DELAY)){
             switch (pinNumber){
             case UN_PESO:
@@ -114,7 +127,14 @@ int insertarMonedas()
             default:
                 break;
             }
-        }
-    }
-    return saldo;
+            time_inactivity = current_time;
+            if((current_time - time_inactivity) >= 200000 && (saldo > 0)){
+                flag_finishInsert = 1;
+                //flag_ticket = 1;
+                return saldo;//aqui nose aun si es lo correcto xdd
+            }else{
+                flag_finishInsert = 0;
+                //flag_ticket = 0;
+            }
+        }//help me
 }
