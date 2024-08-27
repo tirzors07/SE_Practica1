@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "Practica1",
-    "project_version":    "1",
+    "project_version":    "bb42468-dirty",
     "project_path":       "C:/SE/Practica1",
     "idf_path":           "C:/Users/tirzo/esp/v5.3/esp-idf",
     "build_dir":          "C:/SE/Practica1/build",

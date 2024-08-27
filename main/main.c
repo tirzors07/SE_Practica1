@@ -6,12 +6,19 @@
 #include "esp_timer.h"
 #include <stdio.h>
 
-#define INPUT_PIN 17
-#define LED_PIN 2
+/* Tiempo de cada led prendido y apagado tambien entre cambio de estados */
+#define DELAY_LEDS 500 
+#define DELAY_COINS 500
+/* El tiempo maximo permitido de inactividad para el cliente, 2 segundos */
+#define US_INACITIVITY 200000
+static uint16_t saldo = 0;
 static int64_t last_time = 0;
+static int64_t time_inactivity = 0;
+static uint8_t flag_ticket = 1;
 QueueHandle_t handlerQueue;
-uint8_t array_init[4][2] = {
-    // btn   leds
+
+uint8_t array_init[4][2] = { //matriz para numero de botones y leds
+   // btn   leds
     {16, 5},  //$10
     {17, 18}, //$5
     {22, 19}, //$1
@@ -26,20 +33,16 @@ typedef enum
 } State_t;
 
 void gpios_init();
-//void expedirRecibo();
-int insertarMonedas();
-void secuenciaCambio(uint8_t cambio, uint8_t piNumber);
-void cambio(uint8_t, uint8_t, uint8_t, uint8_t);
+int insertarMonedas();//retorna la cantidad total de numberCoinss insertadas
+void secuenciaCambio(uint8_t cambio, uint8_t piNumber);//funcion para representar cambio en leds
+void cambio(uint8_t, uint8_t, uint8_t, uint8_t);//funcion que retorna cambio total y  utliza la func secuenciaCambio
 void LED_Control_Task(void *params);
 static void IRAM_ATTR gpio_interrupt_handler(void *args);
+
 void app_main(void)
 {
-    //xd
+    //
 }
-/*void expedirRecibo()
-{
-    printf("Recibo expedido. Gracias por su pago.\n");
-}*/
 /*static void IRAM_ATTR gpio_interrupt_handler(void *args)
 {
   int pinNumber = (int) args;
@@ -52,12 +55,12 @@ void app_main(void)
 }*/
 /*void LED_Control_Task(void *params)
 {
-    int pinNumber, count = 0;
+    int pinNumber, saldo = 0;
     while (1)
     {
         if (xQueueReceive(handlerQueue, &pinNumber, portMAX_DELAY))
         {
-            printf("GPIO %d was pressed %d times. The state is %d\n", pinNumber, count++, gpio_get_level(INPUT_PIN));
+            printf("GPIO %d was pressed %d times. The state is %d\n", pinNumber, saldo++, gpio_get_level(INPUT_PIN));
             gpio_set_level(LED_PIN, gpio_get_level(INPUT_PIN));
         }
     }
@@ -82,37 +85,36 @@ void cambio(uint8_t cantidad, uint8_t diez, uint8_t cinco, uint8_t un_peso)
         cambio(cantidad - 1, diez, cinco, un_peso + 1);
     }
 }
-void secuenciaCambio(uint8_t moneda, uint8_t piNumber)
+void secuenciaCambio(uint8_t numberCoins, uint8_t piNumber)
 {
-    for (uint8_t i = 0; i < moneda; i++){
+    for (uint8_t i = 0; i < numberCoins; i++){
         gpio_set_level(piNumber, 1);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay( 500/portTICK_PERIOD_MS);
         gpio_set_level(piNumber, 0);
     }
 }
 int insertarMonedas()
 {
-    int pinNumber, count = 0;
-    static int64_t time_us, time_last;
+    int pinNumber;
     while (1){
         if (xQueueReceive(handlerQueue, &pinNumber, portMAX_DELAY)){
             switch (pinNumber){
             case UN_PESO:
-                count++;
+                saldo++;
                 break;
             case CINCO_PESOS:
-                count += 5;
+                saldo += 5;
                 break;
             case DIEZ_PESOS:
-                count += 10;
+                saldo += 10;
                 break;
             case VEINTE_PESOS:
-                count += 20;
+                saldo += 20;
                 break;
             default:
                 break;
             }
         }
     }
-    return count;
+    return saldo;
 }
