@@ -15,13 +15,13 @@
 #define PIN_LED4 21 // ticket
 const static gpio_num_t INPUT_PINS[4] = {BTN_1, BTN_2, BTN_3, BTN_4};
 const static gpio_num_t PIN_LEDS[4] = {PIN_LED1, PIN_LED2, PIN_LED3, PIN_LED4};
-static uint16_t saldo_btn = 0;
+static int16_t saldo_btn = 0;
 static int64_t current_time = 0;
 static int64_t last = 0;
 QueueHandle_t handlerQueue;
 typedef struct Payment
 {
-  int8_t saldo;               // saldo total
+  int16_t saldo;               // saldo total
   int64_t last_time;          // tiempo anterior
   TaskHandle_t pxCreatedTask; // manejador de tarea
 } Payment_t;
@@ -33,11 +33,12 @@ typedef enum
   Q3_FULL_PAYMENT,
   Q4_EXCHANGE
 } estado_t;
+//
 void gpios_init();
 void insert_coins_Task(void *params); // retorna la cantidad total de numberCoinss insertadas
 void paymentSequence(estado_t *, Payment_t *payment);
-void secuenciaCambio(int8_t numberCoins, int8_t piNumber); // funcion para representar cambio en leds
-void cambio(int8_t cantidad);           // funcion que retorna cambio total y  utliza la func secuenciaCambio
+void secuenciaCambio(int16_t numberCoins, int8_t piNumber); // funcion para representar cambio en leds
+void cambio(int16_t cantidad);           // funcion que retorna cambio total y  utliza la func secuenciaCambio
 static void IRAM_ATTR gpio_interrupt_handler(void *args) {
   int pinNumber = (int)args;
   current_time = esp_timer_get_time();
@@ -47,6 +48,7 @@ static void IRAM_ATTR gpio_interrupt_handler(void *args) {
     xQueueSendFromISR(handlerQueue, &pinNumber, NULL);
   }
 }
+//
 void app_main(void)
 {
   Payment_t payment = {0};
@@ -64,9 +66,9 @@ void app_main(void)
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
-void cambio(int8_t cantidad)
+void cambio(int16_t cantidad)
 {
-    int8_t diez = 0, cinco = 0, un_peso = 0;
+    int16_t diez = 0, cinco = 0, un_peso = 0;
     while (cantidad > 0) {
         if (cantidad >= 10) {
             cantidad -= 10;
@@ -86,7 +88,7 @@ void cambio(int8_t cantidad)
     secuenciaCambio(un_peso, PIN_LEDS[2]);
     vTaskDelay(500 / portTICK_PERIOD_MS);
 }
-void secuenciaCambio(int8_t numberCoins, int8_t piNumber)
+void secuenciaCambio(int16_t numberCoins, int8_t piNumber)
 {
   for (uint8_t i = 0; i < numberCoins; i++)
   {
@@ -101,9 +103,13 @@ void paymentSequence(estado_t *current_state_t, Payment_t *payment)
   switch (*current_state_t)
   {
     case Q0_PAYMENT_RESTART: // INICIAL
-      printf("Estado 0 en ejecucion\n");
+      gpio_set_level(PIN_LEDS[3], 0);//of led ticket
+      printf("Restarting variables.....\n");
+      vTaskDelay(30 / portTICK_PERIOD_MS);
       payment->last_time = 0;
       payment->saldo = 0;
+      printf("Ready for insert coins: \n");
+      printf("The cost for the services is $15.00 mxn\n\n");
       *current_state_t = Q1_COIN_WAIT;
       break;
     case Q1_COIN_WAIT:
@@ -115,10 +121,20 @@ void paymentSequence(estado_t *current_state_t, Payment_t *payment)
     case Q2_PAYMENT:
       if ((esp_timer_get_time() - payment->last_time) >= 5000000 && (payment->saldo > 0))
       {
+        printf("Timeout for 5 seconds\n");
+        if (payment->saldo < 15) {
+          printf("Incomplete payment for $%d.00 mxn, please try again\n", payment->saldo);
+          gpio_set_level(GPIO_NUM_2, 1);
+          vTaskDelay(250/ portTICK_PERIOD_MS);
+          gpio_set_level(GPIO_NUM_2, 0);
+          printf("Your change is $%d.00 mxn \n", payment->saldo);
+          cambio(payment->saldo);
+          *current_state_t = Q0_PAYMENT_RESTART;
+        } else {
+          printf("Redirecting to full payment with $%d.00 mxn\n", payment->saldo);
+          *current_state_t = Q3_FULL_PAYMENT;
+        }
         //vTaskSuspend(payment->pxCreatedTask);
-        printf("Tiempo de inactividad agotado\n");
-        printf("Redirigiendo a pago completo con %d\n", payment->saldo);
-        *current_state_t = Q3_FULL_PAYMENT;
       }
       else
       {
@@ -126,26 +142,24 @@ void paymentSequence(estado_t *current_state_t, Payment_t *payment)
       }
       break;
     case Q3_FULL_PAYMENT:
-      if (payment->saldo == 15)
-      { // devolver ticket y reiniciar
-        printf("Has pagado %d\n", payment->saldo);
+      if (payment->saldo == 15){ // devolver ticket y reiniciar
+        printf("You have paid $%d.00 mxn\n", payment->saldo);
+        printf("Thank you for using our services, welcome!!!\n\n");
         gpio_set_level(PIN_LEDS[3], 1);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-        gpio_set_level(PIN_LEDS[3], 0);
+        vTaskDelay(400 / portTICK_PERIOD_MS);
         *current_state_t = Q0_PAYMENT_RESTART; // AL REINICIO
       }
-      if (((payment->saldo) - 15) > 0)
-      {
+      if (((payment->saldo) - 15) > 0){
         gpio_set_level(PIN_LEDS[3], 1);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-        gpio_set_level(PIN_LEDS[3], 0);
         *current_state_t = Q4_EXCHANGE; // cambio
         payment->saldo = payment->saldo - 15;
       }
       break;
     case Q4_EXCHANGE:
-      printf("Su cambio es %d \n",payment->saldo);
+      printf("Your change is $%d.00 mxn \n", payment->saldo);
+      printf("Thank you for using our services, welcome!!!\n\n");
       cambio(payment->saldo);
+      //gpio_set_level(PIN_LEDS[3], 0);
       *current_state_t = Q0_PAYMENT_RESTART;
       break;
     default:
@@ -161,7 +175,7 @@ void insert_coins_Task(void *params)
   {
     if (xQueueReceive(handlerQueue, &pinNumber, portMAX_DELAY)) // entra si recibe algo
     {
-      printf("Pin: %d\n",pinNumber);
+      printf("Pin Number: %d",pinNumber);
       switch (pinNumber)
       {
         case BTN_1: // Botón 1
@@ -179,6 +193,7 @@ void insert_coins_Task(void *params)
       }
       payment->last_time = esp_timer_get_time(); // toma el ultimo valor desde que se detecto un pulso
       payment->saldo += saldo_btn;
+      printf("\tamount: $ %d.00 mxn\n", payment->saldo);
     }
   }
 }
@@ -196,4 +211,6 @@ void gpios_init()
     gpio_set_pull_mode(INPUT_PINS[i], GPIO_PULLUP_ONLY);
     gpio_set_intr_type(INPUT_PINS[i], GPIO_INTR_POSEDGE);
   }
+  gpio_reset_pin(GPIO_NUM_2);
+  gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
 }
